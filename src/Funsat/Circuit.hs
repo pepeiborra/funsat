@@ -13,6 +13,9 @@ module Funsat.Circuit
       Circuit(..)
     , CastCircuit(..)
 
+    -- ** bit-encoded Naturals
+    , fromBinary
+
     -- ** Explicit sharing circuit
     , Shared(..)
     , FrozenShared(..)
@@ -73,7 +76,7 @@ where
 import Control.Monad.Reader
 import Control.Monad.State.Lazy hiding ((>=>), forM_)
 import Data.Bimap( Bimap )
-import Data.List( nub )
+import Data.List( nub, foldl')
 import Data.Map( Map )
 import Data.Maybe()
 import Data.Ord()
@@ -129,11 +132,27 @@ class Circuit repr where
     xor :: (Ord var, Show var) => repr var -> repr var -> repr var
     xor p q = (p `or` q) `and` not (p `and` q)
 
+    -- | Ordering constraints for binary represented (lsb first) naturals
+    nat   :: (Ord var, Show var) => [var] -> repr var
+    gt,lt,eq :: (Ord var, Show var) => repr var -> repr var -> repr var
+{-
+    eq (p:pp) (q:qq) = iff p q `and` eq pp qq
+    eq [] [] = true
+    eq [] qq = not $ foldr or false qq
+    eq pp [] = not $ foldr or false pp
+
+    lt (p:pp) (q:qq) = lt pp qq `or` (not p `and` q `and` eq pp qq)
+    lt [] qq = not (foldr or false qq)
+    lt _  [] = false
+-}
+    gt x y = not (lt x y) `and` not (eq x y)
+--    lt x y = not (gt x y) `and` not (eq x y)
+
+
 -- | Instances of `CastCircuit' admit converting one circuit representation to
 -- another.
 class CastCircuit c where
     castCircuit :: (Circuit cOut, Ord var, Show var) => c var -> cOut var
-
 
 
 -- ** Explicit sharing circuit
@@ -168,6 +187,9 @@ instance CastCircuit FrozenShared where
         go c@(COnlyif{}) = uncurry onlyif . go2 $ getChildren c (onlyifMap maps)
         go c@(CIff{})    = uncurry iff . go2 $ getChildren c (iffMap maps)
         go c@(CIte{})    = uncurry3 ite . go3 $ getChildren c (iteMap maps)
+        go c@CEq{}       = uncurry eq . go2 $ getChildren c (eqMap maps)
+        go c@CLt{}       = uncurry lt . go2 $ getChildren c (ltMap maps)
+        go c@CNat{}      = nat $ getChildren c (natMap maps)
 
         go2 = (go `onTup`)
         go3 (x, y, z) = (go x, go y, go z)
@@ -203,6 +225,9 @@ data CCode = CTrue   { circuitHash :: !CircuitHash }
            | COnlyif { circuitHash :: !CircuitHash }
            | CIff    { circuitHash :: !CircuitHash }
            | CIte    { circuitHash :: !CircuitHash }
+           | CNat    { circuitHash :: !CircuitHash }
+           | CEq     { circuitHash :: !CircuitHash }
+           | CLt     { circuitHash :: !CircuitHash }
              deriving (Eq, Ord, Show, Read)
 
 -- | Maps used to implement the common-subexpression sharing implementation of
@@ -221,7 +246,11 @@ data CMaps v = CMaps
     , xorMap    :: Bimap CircuitHash (CCode, CCode)
     , onlyifMap :: Bimap CircuitHash (CCode, CCode)
     , iffMap    :: Bimap CircuitHash (CCode, CCode)
-    , iteMap    :: Bimap CircuitHash (CCode, CCode, CCode) }
+    , iteMap    :: Bimap CircuitHash (CCode, CCode, CCode)
+    , natMap    :: Bimap CircuitHash [v]
+    , eqMap     :: Bimap CircuitHash (CCode, CCode)
+    , ltMap     :: Bimap CircuitHash (CCode, CCode)
+    }
                deriving (Eq, Show)
 
 -- | A `CMaps' with an initial `hashCount' of 2.
@@ -235,7 +264,10 @@ emptyCMaps = CMaps
     , xorMap    = Bimap.empty
     , onlyifMap = Bimap.empty
     , iffMap    = Bimap.empty
-    , iteMap    = Bimap.empty }
+    , iteMap    = Bimap.empty
+    , natMap    = Bimap.empty
+    , eqMap     = Bimap.empty
+    , ltMap     = Bimap.empty }
 
 -- | Find key mapping to given value.
 lookupv :: Ord v => v -> Bimap Int v -> Maybe Int
@@ -289,6 +321,17 @@ instance Circuit Shared where
         ht <- unShared t ; he <- unShared e
         recordC CIte iteMap (\s e' -> s{ iteMap = e' }) (hx, ht, he)
 
+    eq xx yy = Shared $ do
+                 x <- unShared xx
+                 y <- unShared yy
+                 recordC CEq eqMap (\s e -> s {eqMap = e}) (x,y)
+
+    lt xx yy = Shared $ do
+                 x <- unShared xx
+                 y <- unShared yy
+                 recordC CLt ltMap (\s e -> s {ltMap = e}) (x,y)
+
+    nat = Shared . recordC CNat natMap (\s e -> s{ natMap = e })
 
 {-
 -- | An And-Inverter graph edge may complement its input.
@@ -345,6 +388,9 @@ data Tree v = TTrue
              | TIff (Tree v) (Tree v)
              | TOnlyIf (Tree v) (Tree v)
              | TIte (Tree v) (Tree v) (Tree v)
+             | TEq  (Tree v) (Tree v)
+             | TLt  (Tree v) (Tree v)
+             | TNat [v]
                deriving (Show, Eq, Ord)
 
 foldTree :: (t -> v -> t) -> t -> Tree v -> t
@@ -358,6 +404,9 @@ foldTree f i (TXor t1 t2) = foldTree f (foldTree f i t1) t2
 foldTree f i (TIff t1 t2) = foldTree f (foldTree f i t1) t2
 foldTree f i (TOnlyIf t1 t2) = foldTree f (foldTree f i t1) t2
 foldTree f i (TIte x t e) = foldTree f (foldTree f (foldTree f i x) t) e
+foldTree f i (TEq t1 t2)  = foldTree f (foldTree f i t1) t2
+foldTree f i (TLt t1 t2)  = foldTree f (foldTree f i t1) t2
+foldTree f i (TNat xx)    = foldr (flip f) i xx
 
 instance Circuit Tree where
     true  = TTrue
@@ -370,6 +419,9 @@ instance Circuit Tree where
     iff   = TIff
     onlyif = TOnlyIf
     ite   = TIte
+    eq    = TEq
+    lt    = TLt
+    nat   = TNat
 
 instance CastCircuit Tree where
     castCircuit TTrue        = true
@@ -382,6 +434,9 @@ instance CastCircuit Tree where
     castCircuit (TIff t1 t2) = iff (castCircuit t1) (castCircuit t2)
     castCircuit (TOnlyIf t1 t2) = onlyif (castCircuit t1) (castCircuit t2)
     castCircuit (TIte x t e) = ite (castCircuit x) (castCircuit t) (castCircuit e)
+    castCircuit (TEq t1 t2)  = eq (castCircuit t1) (castCircuit t2)
+    castCircuit (TLt t1 t2)  = lt (castCircuit t1) (castCircuit t2)
+    castCircuit (TNat vv)    = nat vv
 
 -- ** Circuit evaluator
 
@@ -389,23 +444,34 @@ type BEnv v = Map v Bool
 
 -- | A circuit evaluator, that is, a circuit represented as a function from
 -- variable values to booleans.
-newtype Eval v = Eval { unEval :: BEnv v -> Bool }
+newtype Eval v = Eval { unEval :: BEnv v -> Either Integer Bool }
 
 -- | Evaluate a circuit given inputs.
-runEval :: BEnv v -> Eval v -> Bool
+runEval :: BEnv v -> Eval v -> Either Integer Bool
 runEval = flip unEval
 
 instance Circuit Eval where
-    true    = Eval $ const True
-    false   = Eval $ const False
-    input v = Eval $ \env ->
+    true    = Eval $ const $ Right True
+    false   = Eval $ const $ Right False
+    input v = Eval $ \env -> Right $ 
                       Map.findWithDefault
                         (error $ "Eval: no such var: " ++ show v
                                  ++ " in " ++ show env)
                          v env
-    and c1 c2 = Eval (\env -> unEval c1 env && unEval c2 env)
-    or  c1 c2 = Eval (\env -> unEval c1 env || unEval c2 env)
-    not c     = Eval (\env -> Prelude.not $ unEval c env)
+    and c1 c2 = Eval (\env -> Right $ fromRight(unEval c1 env) && fromRight(unEval c2 env))
+    or  c1 c2 = Eval (\env -> Right $ fromRight(unEval c1 env) || fromRight(unEval c2 env))
+    not c     = Eval (\env -> Right $ Prelude.not $ fromRight(unEval c env))
+    eq c1 c2  = Eval (\env -> Right $ fromLeft(unEval c1 env) == fromLeft(unEval c2 env))
+    lt c1 c2  = Eval (\env -> Right $ fromLeft(unEval c1 env) <  fromLeft(unEval c2 env))
+    nat xx    = Eval (\env -> Left . fromBinary . map (fromRight . (`unEval` env) . input) $ xx)
+
+fromBinary :: [ Bool ] -> Integer
+fromBinary xs = foldr ( \ x y -> 2*y + if x then 1 else 0 ) 0 xs
+
+fromLeft  :: Either l r -> l
+fromRight :: Either l r -> r
+fromLeft  =   either  id  (typeError "runEval: Expected a natural.")
+fromRight = (`either` id) (typeError "runEval: Expected a boolean.")
 
 -- ** Graph circuit
 
@@ -427,6 +493,9 @@ data NodeType v = NInput v
                 | NIff
                 | NOnlyIf
                 | NIte
+                | NNat [v]
+                | NEq
+                | NLt
                   deriving (Eq, Ord, Show, Read)
 
 data EdgeType = ETest -- ^ the edge is the condition for an `ite' element
@@ -471,6 +540,10 @@ instance Circuit Graph where
         return (n, (n, NIte) : xNodes ++ tNodes ++ eNodes
                , (xNode, n, ETest) : (tNode, n, EThen) : (eNode, n, EElse)
                  : xEdges ++ tEdges ++ eEdges)
+
+    eq     = binaryNode NEq
+    lt     = binaryNode NLt
+    nat xx = Graph $ do {n <- newNode; return (n, [(n, NNat xx)],[])}
 
 binaryNode :: NodeType v -> Graph v -> Graph v -> Graph v
 {-# INLINE binaryNode #-}
@@ -545,7 +618,10 @@ shareGraph (FrozenShared output cmaps) =
                                : (tNode, i, frz c)
                                : (eNode, i, frz c)
                                : cEdges ++ tEdges ++ eEdges)
-                           
+
+    go c@(CEq i) = extract i eqMap >>= tupM2 go >>= addKids c
+    go c@(CLt i) = extract i ltMap >>= tupM2 go >>= addKids c
+    go c@(CNat i) = return (i, [(i, frz c)], [])
 
     addKids ccode ((lNode, lNodes, lEdges), (rNode, rNodes, rEdges)) =
         let i = circuitHash ccode
@@ -564,7 +640,7 @@ shareGraph (FrozenShared output cmaps) =
 -- ** Circuit simplification
 
 -- | Performs obvious constant propagations.
-simplifyTree :: Tree v -> Tree v
+simplifyTree :: Eq v => Tree v -> Tree v
 simplifyTree l@(TLeaf _) = l
 simplifyTree TFalse      = TFalse
 simplifyTree TTrue       = TTrue
@@ -636,6 +712,10 @@ simplifyTree (TIte x t e) =
          TFalse -> e'
          _      -> TIte x' t' e'
 
+simplifyTree t@(TEq x y) = if x == y then TTrue  else t
+simplifyTree   (TLt (TNat []) _) = TFalse
+simplifyTree t@(TLt x y) = if x == y then TFalse else t
+simplifyTree t@TNat{}    = t
 
 -- ** Convert circuit to CNF
 
@@ -763,7 +843,7 @@ toCNF cIn =
           Nothing -> error $ "toCNF: unknown code: " ++ show code
           Just x  -> return x
 
--- | Returns an equivalent circuit with no iff, xor, onlyif, and ite nodes.
+-- | Returns an equivalent circuit with no iff, xor, onlyif, ite, nat, eq and lt nodes.
 removeComplex :: (Ord v, Show v, Circuit c) => FrozenShared v -> c v
 removeComplex (FrozenShared code maps) = go code
   where
@@ -786,6 +866,37 @@ removeComplex (FrozenShared code maps) = go code
       let (cc, tc, ec) = getChildren c (iteMap maps)
           (cond, t, e) = (go cc, go tc, go ec)
       in (cond `and` t) `or` (not cond `and` e)
+  go  CNat{} = typeError "removeComplex: expected a boolean."
+  go c@CEq{}
+      | (x@CNat{}, y@CNat{}) <- getChildren c (eqMap maps)
+      , xx <- getChildren x (natMap maps)
+      , yy <- getChildren y (natMap maps)
+      = eq xx yy
+
+      | otherwise
+      = typeError "removeComplex: expected a boolean."
+
+  go c@(CLt{})
+      | (x@CNat{}, y@CNat{}) <- getChildren c (ltMap maps)
+      , xx <- getChildren x (natMap maps)
+      , yy <- getChildren y (natMap maps)
+      = lt xx yy
+
+      | otherwise
+      = typeError "removeComplex: expected a boolean."
+
+  eq (p:pp) (q:qq) =      (     (not (input p) `and` not (input q))
+                           `or` (input p `and` input q)
+                          )
+                     `and` eq pp qq
+  eq [] [] = true
+  eq [] qq = not $ foldl' or false $ map input qq
+  eq pp [] = not $ foldl' or false $ map input pp
+
+  lt (p:pp) (q:qq) = lt pp qq `or` (not (input p) `and` input q `and` eq pp qq)
+  lt [] qq = foldl' or false $ map input qq
+  lt _  [] = false
+
 
 onTup :: (a -> b) -> (a, a) -> (b, b)
 onTup f (x, y) = (f x, f y)
@@ -811,4 +922,5 @@ projectCircuitSolution sol pblm = case sol of
                   Nothing -> error $ "projectSolution: unknown lit: " ++ show l
                   Just code -> circuitHash code
 
-
+typeError :: String -> a
+typeError msg = error (msg ++ "\nPlease send an email to the pepeiborra@gmail.com requesting a typed circuit language.")
