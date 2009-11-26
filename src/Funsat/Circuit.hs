@@ -13,6 +13,9 @@ module Funsat.Circuit
       Circuit(..)
     , CastCircuit(..)
 
+    -- ** bit-encoded Naturals
+    , fromBinary
+
     -- ** Explicit sharing circuit
     , Shared(..)
     , FrozenShared(..)
@@ -73,7 +76,7 @@ where
 import Control.Monad.Reader
 import Control.Monad.State.Lazy hiding ((>=>), forM_)
 import Data.Bimap( Bimap )
-import Data.List( nub )
+import Data.List( nub, foldl')
 import Data.Map( Map )
 import Data.Maybe()
 import Data.Ord()
@@ -131,17 +134,8 @@ class Circuit repr where
 
     -- | Ordering constraints for binary represented (lsb first) naturals
     nat   :: (Ord var, Show var) => [var] -> repr var
-    lt,eq :: (Ord var, Show var) => repr var -> repr var -> repr var
-{-
-    eq (p:pp) (q:qq) = iff p q `and` eq pp qq
-    eq [] [] = true
-    eq [] qq = not $ foldr or false qq
-    eq pp [] = not $ foldr or false pp
-
-    lt (p:pp) (q:qq) = lt pp qq `or` (not p `and` q `and` eq pp qq)
-    lt [] qq = not (foldr or false qq)
-    lt _  [] = false
--}
+    gt,lt,eq :: (Ord var, Show var) => repr var -> repr var -> repr var
+    gt x y = not (lt x y) `and` not (eq x y)
 
 -- | Instances of `CastCircuit' admit converting one circuit representation to
 -- another.
@@ -323,7 +317,7 @@ instance Circuit Shared where
     lt xx yy = Shared $ do
                  x <- unShared xx
                  y <- unShared yy
-                 recordC CLt eqMap (\s e -> s {ltMap = e}) (x,y)
+                 recordC CLt ltMap (\s e -> s {ltMap = e}) (x,y)
 
     nat = Shared . recordC CNat natMap (\s e -> s{ natMap = e })
 
@@ -430,6 +424,7 @@ instance CastCircuit Tree where
     castCircuit (TIte x t e) = ite (castCircuit x) (castCircuit t) (castCircuit e)
     castCircuit (TEq t1 t2)  = eq (castCircuit t1) (castCircuit t2)
     castCircuit (TLt t1 t2)  = lt (castCircuit t1) (castCircuit t2)
+    castCircuit (TNat vv)    = nat vv
 
 -- ** Circuit evaluator
 
@@ -461,6 +456,8 @@ instance Circuit Eval where
 fromBinary :: [ Bool ] -> Integer
 fromBinary xs = foldr ( \ x y -> 2*y + if x then 1 else 0 ) 0 xs
 
+fromLeft  :: Either l r -> l
+fromRight :: Either l r -> r
 fromLeft  =   either  id  (typeError "runEval: Expected a natural.")
 fromRight = (`either` id) (typeError "runEval: Expected a boolean.")
 
@@ -704,7 +701,7 @@ simplifyTree (TIte x t e) =
          _      -> TIte x' t' e'
 
 simplifyTree t@(TEq x y) = if x == y then TTrue  else t
-simplifyTree t@(TLt (TNat []) y) = TFalse
+simplifyTree   (TLt (TNat []) _) = TFalse
 simplifyTree t@(TLt x y) = if x == y then TFalse else t
 simplifyTree t@TNat{}    = t
 
@@ -857,7 +854,7 @@ removeComplex (FrozenShared code maps) = go code
       let (cc, tc, ec) = getChildren c (iteMap maps)
           (cond, t, e) = (go cc, go tc, go ec)
       in (cond `and` t) `or` (not cond `and` e)
-  go c@CNat{} = typeError "removeComplex: expected a boolean."
+  go  CNat{} = typeError "removeComplex: expected a boolean."
   go c@CEq{}
       | (x@CNat{}, y@CNat{}) <- getChildren c (eqMap maps)
       , xx <- getChildren x (natMap maps)
@@ -868,7 +865,7 @@ removeComplex (FrozenShared code maps) = go code
       = typeError "removeComplex: expected a boolean."
 
   go c@(CLt{})
-      | (x@CNat{}, y@CNat{}) <- getChildren c (eqMap maps)
+      | (x@CNat{}, y@CNat{}) <- getChildren c (ltMap maps)
       , xx <- getChildren x (natMap maps)
       , yy <- getChildren y (natMap maps)
       = lt xx yy
@@ -876,13 +873,16 @@ removeComplex (FrozenShared code maps) = go code
       | otherwise
       = typeError "removeComplex: expected a boolean."
 
-  eq (p:pp) (q:qq) = iff (input p) (input q) `and` eq pp qq
+  eq (p:pp) (q:qq) =      (     (not (input p) `and` not (input q))
+                           `or` (input p `and` input q)
+                          )
+                     `and` eq pp qq
   eq [] [] = true
-  eq [] qq = not $ foldr or false $ map input qq
-  eq pp [] = not $ foldr or false $ map input pp
+  eq [] qq = not $ foldl' or false $ map input qq
+  eq pp [] = not $ foldl' or false $ map input pp
 
   lt (p:pp) (q:qq) = lt pp qq `or` (not (input p) `and` input q `and` eq pp qq)
-  lt [] qq = not $ foldr or false $ map input qq
+  lt [] qq = foldl' or false $ map input qq
   lt _  [] = false
 
 
@@ -910,5 +910,5 @@ projectCircuitSolution sol pblm = case sol of
                   Nothing -> error $ "projectSolution: unknown lit: " ++ show l
                   Just code -> circuitHash code
 
-
+typeError :: String -> a
 typeError msg = error (msg ++ "\nPlease send an email to the pepeiborra@gmail.com requesting a typed circuit language.")

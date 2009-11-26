@@ -73,7 +73,7 @@ Library
                       -Wall -fwarn-tabs
                       -fno-warn-name-shadowing
                       -fno-warn-orphans
- Extensions:          CPP, ScopedTypeVariables
+ Extensions:          CPP, ScopedTypeVariables, PatternGuards
  Hs-source-dirs:      src
  Build-Depends:       base,
                       containers,

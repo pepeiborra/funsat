@@ -225,7 +225,7 @@ prop_circuitToCnf treeCircuit =
          Sat{} -> let benv = projectCircuitSolution solution pblm
                   in label "Sat"
                      . trivial (Map.null benv)
-                     $ runEval benv (castCircuit treeCircuit)
+                     $ fromRight $ runEval benv (castCircuit treeCircuit)
 
          Unsat{} -> label "Unsat (unverified)" True
 
