@@ -135,7 +135,12 @@ class Circuit cOut => CastCircuit c cOut where
 newtype Shared v = Shared { unShared :: State (CMaps v) CCode }
 
 -- | A shared circuit that has already been constructed.
-data FrozenShared v = FrozenShared !CCode !(CMaps v) deriving (Eq, Show)
+data FrozenShared v = FrozenShared !CCode !(CMaps v) deriving (Eq)
+
+instance Show v => Show (FrozenShared v) where
+  showsPrec p (FrozenShared c maps) = showString "FrozenShared " . showParen True (showsPrec p c)
+                                                                 . showChar ' '
+                                                                 . showsPrec p maps{hashCount=[]}
 
 -- | Reify a sharing circuit.
 runShared :: Shared v -> FrozenShared v
