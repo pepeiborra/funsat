@@ -21,10 +21,18 @@ import Data.Bits hiding( xor )
 import Data.Foldable hiding (sequence_)
 import Data.List (nub, splitAt)
 import Data.Maybe
+import Data.Monoid
 import Data.Set( Set )
 import Debug.Trace
-import Funsat.Circuit hiding( Circuit(..) )
-import Funsat.Circuit( Circuit(input,true,false,ite,xor,onlyif) )
+import Funsat.Circuit( Circuit(input,true,false)
+                     , CastCircuit(..)
+                     , CircuitProblem(..)
+                     , BEnv, BIEnv, Eval
+                     , projectCircuitSolution)
+import Funsat.ECircuit( ECircuit(ite,xor,onlyif)
+                      , NatCircuit(eq,lt,nat)
+                      , ECircuitProblem(..)
+                      , projectECircuitSolution)
 import Funsat.Types
 import Funsat.Utils
 import Language.CNF.Parse.ParseDIMACS( parseFile )
@@ -41,8 +49,10 @@ import qualified Data.Map as Map
 import qualified Funsat.Resolution as Resolution
 import qualified Language.CNF.Parse.ParseDIMACS as ParseCNF
 import qualified Test.QuickCheck as QC
-import qualified Funsat.Circuit as C
-import qualified Funsat.Circuit as Circuit
+import qualified Funsat.Circuit  as Circuit
+import qualified Funsat.ECircuit as C
+import qualified Funsat.ECircuit as ECircuit
+
 
 
 main :: IO ()
@@ -62,7 +72,11 @@ main = do
       hPutStr stderr "prop_varHash: " >> check config prop_varHash
       hPutStr stderr "prop_count: " >> check config prop_count
       hPutStr stderr "prop_circuitToCnf: " >> check config prop_circuitToCnf
-      hPutStr stderr "prop_circuitSimplify: " >> check config prop_circuitSimplify
+      hPutStr stderr "prop_ecircuitToCnf: " >> check config prop_ecircuitToCnf
+      hPutStr stderr "prop_natcircuitToCnf: " >> check config prop_natcircuitToCnf
+      hPutStr stderr "prop_circuitSimplify: " >> check config prop_ecircuitSimplify
+      hPutStr stderr "prop_ecircuitSimplify: " >> check config prop_ecircuitSimplify
+      hPutStr stderr "prop_natcircuitSimplify: " >> check config prop_natcircuitSimplify
 
       -- Add more tests above here.  Setting the rng keeps the SAT instances the
       -- same even if more tests are added above.  I want this because if I make
@@ -118,7 +132,7 @@ prop_resolutionChecker (cnf :: UnsatCNF) =
           case Resolution.genUnsatCore (fromJust rt) of
             Left _e -> False
             Right unsatCore ->
-                case solve1 ((unUnsatCNF cnf){ clauses = Set.fromList unsatCore}) of
+                case solve1 ((unUnsatCNF cnf){ clauses = unsatCore}) of
                   (Sat _,_,_) -> False
                   (Unsat _,_,_) -> True
 
@@ -219,23 +233,80 @@ instance Show (a -> b) where
 prop_circuitToCnf :: Circuit.Tree Var -> Property
 prop_circuitToCnf treeCircuit =
     let pblm@(CircuitProblem{ problemCnf = cnf }) =
-            toCNF . runShared . castCircuit $ treeCircuit
+            Circuit.toCNF . Circuit.runShared . castCircuit $ treeCircuit
         (solution, _, _) = solve1 cnf
     in case solution of
          Sat{} -> let benv = projectCircuitSolution solution pblm
+                      benv' = benv -- `mappend` Map.fromList [(v,False) | v <- toList treeCircuit]
+                  in   label "Sat"
+                     . trivial (Map.null benv)
+                     $ Circuit.runEval benv' (castCircuit treeCircuit)
+
+         Unsat{} -> label "Unsat (unverified)" True
+
+prop_ecircuitToCnf :: ECircuit.Tree Var -> Property
+prop_ecircuitToCnf treeCircuit =
+    let pblm = ECircuit.toCNF . ECircuit.runShared . castCircuit $ treeCircuit
+        (solution,_,_) = solve1 . eproblemCnf $ pblm
+
+    in case solution of
+         Sat{} -> let benv = projectECircuitSolution solution pblm
+                      benv' = benv -- `mappend` Map.fromList [(v,False) | v <- toList treeCircuit]
                   in label "Sat"
                      . trivial (Map.null benv)
-                     $ fromRight $ runEval benv (castCircuit treeCircuit)
+                     $ fromRight $ ECircuit.runEval benv' (castCircuit treeCircuit)
+
+         Unsat{} -> label "Unsat (unverified)" True
+
+prop_natcircuitToCnf :: ECircuit.Tree NVar -> Property
+prop_natcircuitToCnf treeCircuit =
+    let pblm = ECircuit.toCNF . ECircuit.runShared . castCircuit $ treeCircuit
+        (solution,_,_) = solve1 . eproblemCnf $ pblm
+
+    in case solution of
+         Sat{} -> let benv = projectECircuitSolution solution pblm
+                      benv' = benv `mappend` Map.fromList [(v,Left 0) | v@VN{} <- toList treeCircuit]
+                  in label "Sat"
+                     . trivial (Map.null benv)
+                     $ fromRight $ ECircuit.runEval benv' (castCircuit treeCircuit)
 
          Unsat{} -> label "Unsat (unverified)" True
 
 -- circuit and simplified version should evaluate the same
 prop_circuitSimplify :: ArbBEnv -> Circuit.Tree Var -> Property
 prop_circuitSimplify (ArbBEnv benv) c =
-    trivial (c == TTrue || c == TFalse) $
+    trivial (c == Circuit.TTrue || c == Circuit.TFalse) $
     assert (treeVars c `Set.isSubsetOf` Map.keysSet benv) $
-      runEval benv (castCircuit c)
-      == runEval benv (castCircuit . simplifyTree $ c)
+      Circuit.runEval benv (castCircuit c)
+      == Circuit.runEval benv (castCircuit . Circuit.simplifyTree $ c)
+
+prop_ecircuitSimplify :: ArbBEnv -> ECircuit.Tree Var -> Property
+prop_ecircuitSimplify (ArbBEnv benv) c =
+    trivial (c == ECircuit.TTrue || c == ECircuit.TFalse) $
+    assert (treeVars c `Set.isSubsetOf` Map.keysSet benv) $
+      ECircuit.runEval benv' (castCircuit c)
+      == ECircuit.runEval benv' (castCircuit . ECircuit.simplifyTree $ c)
+  where
+   benv' = Map.map Right benv
+
+prop_natcircuitSimplify :: ArbBIEnv -> ECircuit.Tree NVar -> Property
+prop_natcircuitSimplify (ArbBIEnv benv) c =
+    trivial (c == ECircuit.TTrue || c == ECircuit.TFalse) $
+    assert (treeVars c `Set.isSubsetOf` Map.keysSet benv) $
+      ECircuit.runEval benv (castCircuit c)
+      == ECircuit.runEval benv' (castCircuit c')
+  where
+   (c', bits) = ECircuit.removeNats' bw freshVars (ECircuit.runShared $ castCircuit c)
+
+   benv' = benv `mappend`
+           Map.fromList (concat
+                         [ bb `zip` map Right (toBinary vn ++ repeat False)
+                               | (n, bb) <- Map.toList bits
+                               , Just (Left vn) <- [Map.lookup n benv]])
+
+   freshVars = map VB [succ $ List.maximum [ i | VB i <- Map.keys benv] .. ]
+   bw        = length . toBinary . List.maximum $ [ i | (VN _, Left i) <- Map.toList benv]
+   toBinary  = map ((==1) . (`mod`2)) . takeWhile (>0) . iterate (`div` 2)
 
 {-
 prop_circuitGraphIsTree :: C.Shared Var -> Property
@@ -246,10 +317,8 @@ prop_circuitGraphIsTree sh = c `equivalentTo` g
   c = C.runShared sh
 -}
 
-treeVars :: (Ord v) => Circuit.Tree v -> Set v
-treeVars = C.foldTree (flip Set.insert) Set.empty
-
-
+treeVars :: (Foldable f, Ord var) => f var -> Set var
+treeVars = Set.fromList . toList
 
 
 ------------------------------------------------------------------------------
@@ -344,8 +413,21 @@ instance Arbitrary ArbBEnv where
                   bools <- vector (n+1) :: Gen [Bool]
                   return . ArbBEnv $ Map.fromList (zip [V 1 .. V (n+1)] bools)
 
-instance Arbitrary (Tree Var) where
+newtype ArbBIEnv = ArbBIEnv (BIEnv NVar) deriving (Show)
+instance Arbitrary ArbBIEnv where
+    coarbitrary = undefined
+    arbitrary = sized $ \n -> do
+                  bools <- vector (n+1) :: Gen [Bool]
+                  nats  <- map abs `liftM` vector (n+1) :: Gen [Int]
+                  return . ArbBIEnv $ Map.fromList (zip (map VB [1..n+1]) (map Right bools) ++
+                                                    zip (map VN [1..n+1]) (map Left  nats))
+
+instance Arbitrary (Circuit.Tree Var) where
     arbitrary = sized sizedCircuit
+instance Arbitrary (ECircuit.Tree Var) where
+    arbitrary = sized sizedECircuit
+instance Arbitrary (ECircuit.Tree NVar) where
+    arbitrary = sized sizedNatCircuit
 
 sizedLit n = do
   v <- choose (1, n)
@@ -363,15 +445,47 @@ sizedCircuit n =
           , (return . input . V) n
           , liftM2 C.and subcircuit2 subcircuit2
           , liftM2 C.or  subcircuit2 subcircuit2
+          , liftM  C.not subcircuit1
+          ]
+  where subcircuit2 = sizedCircuit (n `div` 2)
+        subcircuit1 = sizedCircuit (n - 1)
+
+sizedECircuit :: (ECircuit c) => Int -> Gen (c Var)
+sizedECircuit 0 = return . input . V $ 1
+sizedECircuit n =
+    oneof [ return true
+          , return false
+          , (return . input . V) n
+          , liftM2 C.and subcircuit2 subcircuit2
+          , liftM2 C.or  subcircuit2 subcircuit2
           , liftM C.not subcircuit1
           , liftM3 ite subcircuit3 subcircuit3 subcircuit3
           , liftM2 onlyif subcircuit2 subcircuit2
           , liftM2 C.iff subcircuit2 subcircuit2
           , liftM2 xor subcircuit2 subcircuit2
           ]
-  where subcircuit3 = sizedCircuit (n `div` 3)
-        subcircuit2 = sizedCircuit (n `div` 2)
-        subcircuit1 = sizedCircuit (n - 1)
+  where subcircuit3 = sizedECircuit (n `div` 3)
+        subcircuit2 = sizedECircuit (n `div` 2)
+        subcircuit1 = sizedECircuit (n - 1)
+
+data NVar = VN Int | VB Int deriving (Eq, Ord, Show)
+
+sizedNatCircuit :: (NatCircuit c) => Int -> Gen (c NVar)
+sizedNatCircuit 0 = return . input . VB $ 1
+sizedNatCircuit n =
+    oneof [ return true
+          , return false
+          , (return . input . VB) n
+          , liftM2 C.and subcircuit2 subcircuit2
+          , liftM2 C.or  subcircuit2 subcircuit2
+          , liftM  C.not subcircuit1
+          , return $ eq (mkNat n) (mkNat n')
+          , return $ lt (mkNat n) (mkNat n')
+          ]
+  where subcircuit2 = sizedNatCircuit (n `div` 2)
+        subcircuit1 = sizedNatCircuit (n - 1)
+        mkNat       = nat . VN
+        n'          = max (n-1) 1
 
 -- | Generate a random 3SAT problem with the given ratio of clauses/variable.
 --
@@ -386,7 +500,7 @@ genRandom3SAT clausesPerVar n =
        clauseList <- replicateM nClauses arbClause
        return $ CNF { numVars    = nVars
                     , numClauses = nClauses
-                    , clauses    = Set.fromList clauseList }
+                    , clauses    = clauseList }
   where 
     nVars = n `div` 3
     arbClause :: Gen Clause
@@ -433,7 +547,7 @@ asCNF :: ParseCNF.CNF -> CNF
 asCNF (ParseCNF.CNF v c is) =
     CNF {numVars = v
         ,numClauses = c
-        ,clauses = Set.fromList . map (map fromIntegral . elems) $ is}
+        ,clauses = map (map fromIntegral . elems) $ is}
 
 
 verifyBool :: Solution -> Maybe ResolutionTrace -> CNF -> Bool
