@@ -130,7 +130,7 @@ solve cfg fIn =
             (a, isUnsat) <- initialState initialAssignment
             if isUnsat then reportSolution (Unsat a)
                        else stepToSolution initialAssignment >>= reportSolution)
-    SC{ cnf = f{ clauses = Set.empty }, dl = []
+    SC{ cnf = f{ clauses = [] }, dl = []
       , watches = undefined, learnt = undefined
       , propQ = Seq.empty, trail = [], numConfl = 0, level = undefined
       , numConflTotal = 0, numDecisions = 0, numImpl = 0
@@ -241,7 +241,7 @@ defaultConfig = Cfg { configRestart = 100 -- fromIntegral $ max (numVars f `div`
 --   * remove duplicates
 preprocessCNF :: CNF -> CNF
 preprocessCNF f = f{clauses = simpClauses (clauses f)}
-    where simpClauses = Set.map nub -- rm dups
+    where simpClauses = map nub -- rm dups
 
 -- | Simplify the clause database.  Eventually should supersede, probably,
 -- `preprocessCNF'.
@@ -888,9 +888,8 @@ verify sol maybeRT cnf =
 --    Fl.all (\l -> m!(V l) == l || m!(V l) == negate l || m!(V l) == 0) [1..numVars cnf]
     case sol of
       Sat m ->
-          let unsatClauses = toList $
-                             Set.filter (not . isTrue . snd) $
-                             Set.map (\c -> (c, c `statusUnder` m)) (clauses cnf)
+          let unsatClauses = filter (not . isTrue . snd) $
+                             map (\c -> (c, c `statusUnder` m)) (clauses cnf)
           in if null unsatClauses
              then Nothing
              else Just . SatError $ unsatClauses

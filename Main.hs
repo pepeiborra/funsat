@@ -130,7 +130,7 @@ main = do
             cnf <- parseCNF path
             putStrLn $ show (numVars cnf) ++ " variables, "
                        ++ show (numClauses cnf) ++ " clauses"
-            Set.map seqList (clauses cnf)
+            map seqList (clauses cnf)
               `seq` putStrLn ("Solving " ++ path ++ " ...")
             parseEnd <- getCurrentTime
 
@@ -170,5 +170,5 @@ asCNF :: ParseDIMACS.CNF -> CNF
 asCNF (ParseDIMACS.CNF v c is) =
     CNF { numVars    = v
         , numClauses = c
-        , clauses    = Set.fromList . map (map fromIntegral . elems) $ is }
+        , clauses    = map (map fromIntegral . elems) $ is }
 

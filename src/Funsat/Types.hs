@@ -103,7 +103,7 @@ type Clause = [Lit]
 data CNF = CNF
     { numVars    :: Int
     , numClauses :: Int
-    , clauses    :: Set Clause } deriving (Show, Read, Eq)
+    , clauses    :: [Clause] } deriving (Show, Read, Eq)
 
 -- | The solution to a SAT problem.  In each case we return an assignment,
 -- which is obviously right in the `Sat' case; in the `Unsat' case, the reason
