@@ -116,6 +116,9 @@ class Circuit repr where
     or    :: (Ord var, Show var) => repr var -> repr var -> repr var
     or p q = not (not p `and` not q)
 
+    orL, andL :: (Ord var, Show var) => [repr var] -> repr var
+    orL  = foldr or false
+    andL = foldr and true
 
 -- | Instances of `CastCircuit' admit converting one circuit representation to
 -- another.
