@@ -36,33 +36,13 @@ Executable funsat
  Extensions:          CPP, ScopedTypeVariables
  CPP-options:         -DTESTING
  Hs-source-dirs:      . src tests
- Other-modules:
-                      Control.Monad.MonadST
-                      Funsat.FastDom
-                      Funsat.Monad
-                      Funsat.Resolution
-                      Funsat.Solver
-                      Funsat.Types
-                      Funsat.Utils
-                      Text.Tabular
-                      Properties
-
- Build-Depends:       base,
-                      random,
-                      containers,
-                      pretty,
-                      mtl,
-                      array,
-                      QuickCheck < 2,
-                      parse-dimacs >= 1.2 && < 2,
-                      bitset < 1,
-                      bimap >= 0.2 && < 0.3,
-                      fgl,
+ Build-Depends:       random,
                       time
 
 Library
  Exposed-modules:     Control.Monad.MonadST
                       Funsat.Circuit
+                      Funsat.ECircuit
                       Funsat.Monad
                       Funsat.Resolution
                       Funsat.Solver
