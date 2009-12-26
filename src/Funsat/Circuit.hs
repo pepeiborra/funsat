@@ -72,15 +72,18 @@ where
     Copyright 2008 Denis Bueno
 -}
 
+import Control.Applicative
 import Control.Monad.Reader
 import Control.Monad.State.Lazy hiding ((>=>), forM_)
 import Control.Monad.RWS
 import Data.Bimap( Bimap )
+import Data.Foldable (Foldable, foldMap)
 import Data.List( nub )
 import Data.Map( Map )
 import Data.Maybe()
 import Data.Ord()
 import Data.Set( Set )
+import Data.Traversable (Traversable, traverse, fmapDefault, foldMapDefault)
 import Funsat.Types( CNF(..), Lit(..), Var(..), var, lit, Solution(..), litSign, litAssignment )
 import Prelude hiding( not, and, or )
 
@@ -329,13 +332,16 @@ foldTree f i (TLeaf v)    = f i v
 foldTree f i (TAnd t1 t2) = foldTree f (foldTree f i t1) t2
 foldTree f i (TOr t1 t2)  = foldTree f (foldTree f i t1) t2
 foldTree f i (TNot t)     = foldTree f i t
-foldTree f i (TXor t1 t2) = foldTree f (foldTree f i t1) t2
-foldTree f i (TIff t1 t2) = foldTree f (foldTree f i t1) t2
-foldTree f i (TOnlyIf t1 t2) = foldTree f (foldTree f i t1) t2
-foldTree f i (TIte x t e) = foldTree f (foldTree f (foldTree f i x) t) e
-foldTree f i (TEq t1 t2)  = foldTree f (foldTree f i t1) t2
-foldTree f i (TLt t1 t2)  = foldTree f (foldTree f i t1) t2
-foldTree f i (TNat xx)    = foldr (flip f) i xx
+
+instance Functor Tree where fmap = fmapDefault
+instance Foldable Tree where foldMap = foldMapDefault
+instance Traversable Tree where
+  traverse _ TTrue  = pure TTrue
+  traverse _ TFalse = pure TFalse
+  traverse f (TLeaf v) = TLeaf <$> f v
+  traverse f (TNot t) = TNot <$> traverse f t
+  traverse f (TAnd t1 t2) = TAnd <$> traverse f t1 <*> traverse f t2
+  traverse f (TOr  t1 t2) = TOr  <$> traverse f t1 <*> traverse f t2
 
 instance Circuit Tree where
     true  = TTrue
