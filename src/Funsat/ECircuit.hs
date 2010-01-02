@@ -58,6 +58,7 @@ module Funsat.ECircuit
     , ECircuitProblem(..), CNF(..)
     , toCNF
     , projectECircuitSolution
+    , reconstructNatsFromBits
     )
 where
 
@@ -1195,6 +1196,16 @@ projectECircuitSolution sol ECircuitProblem{ eproblemCodeMap = codeMap
 
     on cmp f x y = cmp (f x) (f y)
 
+reconstructNatsFromBits :: Ord v => [(v, [v])] -> BIEnv v -> BIEnv v
+reconstructNatsFromBits bitnats bienv = bienv'
+ where
+  bienv' = bienv `mappend`
+           Map.fromList [ (v, Left nat)
+                           | (v, bits) <- bitnats
+                           , let nat = fromBinary $
+                                       map (\v -> fromRight $ Map.findWithDefault (Right False) v bienv) bits
+                          ]
+  fromRight (Right x) = x
 
 data ProjectionCase = Var CircuitHash | Bit (CircuitHash, Int) | Auxiliar
 
