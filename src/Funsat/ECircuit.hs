@@ -84,6 +84,8 @@ where
 import Control.Applicative
 import Control.Arrow (first, second)
 import Control.Exception (assert)
+import Control.Monad.Cont
+import Control.Monad.Identity
 import Control.Monad.Reader
 import Control.Monad.RWS
 import Control.Monad.State.Strict hiding ((>=>), forM_)
@@ -145,6 +147,10 @@ class Circuit repr => NatCircuit repr where
 -- | A class for circuits with existential quantification
 class Circuit repr => ExistCircuit repr where
     exists :: (repr var -> repr var) -> repr var
+    existsN :: Int -> ([repr var] -> repr var) -> repr var
+
+    exists k = existsN 1 (\[x] -> k x)
+    existsN n k = (`runCont` id) $ do {xx <- replicateM n (cont exists); return $ k xx}
 
 -- | A class for circuits with universal quantification
 class ExistCircuit repr => ForallCircuit repr where
