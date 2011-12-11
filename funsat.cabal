@@ -1,5 +1,5 @@
 Name:                funsat
-Version:             0.6.1
+Version:             0.6.3
 Cabal-Version:       >= 1.2
 Description:
 
@@ -29,6 +29,7 @@ Extra-source-files:  README CHANGES
 
 Executable funsat
  Main-is:             Main.hs
+ buildable:           False
  Ghc-options:         -funbox-strict-fields
                       -Wall -fwarn-tabs
                       -fno-warn-name-shadowing
@@ -60,7 +61,7 @@ Library
                       pretty,
                       mtl,
                       array,
-                      QuickCheck < 2,
+                      QuickCheck,
                       parse-dimacs >= 1.2 && < 2,
                       bitset < 1,
                       bimap >= 0.2 && < 0.3,
