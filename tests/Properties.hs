@@ -1,4 +1,5 @@
 {-# OPTIONS_GHC -fglasgow-exts #-}
+{-# LANGUAGE ConstraintKinds #-}
 module Properties where
 
 {-
@@ -23,7 +24,7 @@ import Data.Maybe
 import Data.Monoid
 import Data.Set( Set )
 import Debug.Trace
-import Funsat.Circuit( Circuit(input,true,false)
+import Funsat.Circuit( Circuit(input,true,false), Co
                      , CastCircuit(..)
                      , CircuitProblem(..)
                      , BEnv, BIEnv, Eval
@@ -410,7 +411,6 @@ instance Arbitrary ArbBEnv where
 
 newtype ArbBIEnv = ArbBIEnv (BIEnv NVar) deriving (Show)
 instance Arbitrary ArbBIEnv where
-    coarbitrary = undefined
     arbitrary = sized $ \n -> do
                   bools <- vector (n+1) :: Gen [Bool]
                   nats  <- map abs `liftM` vector (n+1) :: Gen [Int]
@@ -432,7 +432,7 @@ sizedLit n = do
 
 -- | Generator for a circuit containing at most `n' nodes, involving only the
 -- literals 1 .. n.
-sizedCircuit :: (Circuit c) => Int -> Gen (c Var)
+sizedCircuit :: (Circuit c, Co c Var) => Int -> Gen (c Var)
 sizedCircuit 0 = return . input . V $ 1
 sizedCircuit n =
     oneof [ return true
@@ -445,7 +445,7 @@ sizedCircuit n =
   where subcircuit2 = sizedCircuit (n `div` 2)
         subcircuit1 = sizedCircuit (n - 1)
 
-sizedECircuit :: (ECircuit c) => Int -> Gen (c Var)
+sizedECircuit :: (ECircuit c, Co c Var) => Int -> Gen (c Var)
 sizedECircuit 0 = return . input . V $ 1
 sizedECircuit n =
     oneof [ return true
@@ -465,7 +465,7 @@ sizedECircuit n =
 
 data NVar = VN Int | VB Int deriving (Eq, Ord, Show)
 
-sizedNatCircuit :: (NatCircuit c) => Int -> Gen (c NVar)
+sizedNatCircuit :: (NatCircuit c, Co c NVar) => Int -> Gen (c NVar)
 sizedNatCircuit 0 = return . input . VB $ 1
 sizedNatCircuit n =
     oneof [ return true
