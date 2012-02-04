@@ -63,7 +63,7 @@ Library
                       array,
                       QuickCheck,
                       parse-dimacs >= 1.2 && < 2,
-                      bitset < 1,
+                      bitset == 1.0,
                       bimap >= 0.2 && < 0.3,
                       fgl,
                       split
