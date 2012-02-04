@@ -7,6 +7,7 @@
             ,TypeOperators
             ,ParallelListComp
             ,BangPatterns
+            ,ScopedTypeVariables
  #-}
 {-# OPTIONS -cpp #-}
 

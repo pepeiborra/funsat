@@ -1,7 +1,8 @@
 {-# LANGUAGE MultiParamTypeClasses
             ,FunctionalDependencies
             ,FlexibleInstances
-            ,FlexibleContexts #-}
+            ,FlexibleContexts
+            ,ScopedTypeVariables #-}
 
 {-
     This file is part of funsat.
