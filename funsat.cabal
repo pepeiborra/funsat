@@ -67,4 +67,5 @@ Library
                       bitset >= 1 && < 2,
                       bimap >= 0.2 && < 0.3,
                       fgl,
-                      split
+                      split,
+                      ghc-prim

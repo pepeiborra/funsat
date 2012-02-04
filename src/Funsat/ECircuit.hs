@@ -3,6 +3,8 @@
 {-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleContexts, FlexibleInstances, TypeSynonymInstances #-}
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE TypeFamilies #-}
 
 -- | Boolean circuits with more expressive language.
 --  * Extended propositional circuits
@@ -99,7 +101,7 @@ import Data.Ord()
 import Data.Set( Set )
 import Data.Traversable (Traversable, traverse, fmapDefault, foldMapDefault)
 import Funsat.Types( CNF(..), Lit(..), Var(..), var, lit, Solution(..), litSign, litAssignment )
-import Funsat.Circuit (Circuit(..), CastCircuit(..)
+import Funsat.Circuit (Circuit(..), CastCircuit(..), Co
                       ,EvalF(..), Eval
                       ,BEnv, BIEnv)
 import Prelude hiding( not, and, or )
@@ -122,39 +124,39 @@ class Circuit repr => ECircuit repr where
     -- @t@ when @c@ evaluates to true, and @e@ otherwise.
     --
     -- Defined as @(c `and` t) `or` (not c `and` f)@.
-    ite :: (Ord var, Show var) => repr var -> repr var -> repr var -> repr var
+    ite :: (Co repr var) => repr var -> repr var -> repr var -> repr var
     ite c t f = (c `and` t) `or` (not c `and` f)
 
     -- | Defined as @`onlyif' p q = not p `or` q@.
-    onlyif :: (Ord var, Show var) => repr var -> repr var -> repr var
+    onlyif :: (Co repr var) => repr var -> repr var -> repr var
     onlyif p q = not p `or` q
 
     -- | Defined as @`iff' p q = (p `onlyif` q) `and` (q `onlyif` p)@.
-    iff :: (Ord var, Show var) => repr var -> repr var -> repr var
+    iff :: (Co repr var) => repr var -> repr var -> repr var
     iff p q = (p `onlyif` q) `and` (q `onlyif` p)
 
     -- | Defined as @`xor' p q = (p `or` q) `and` not (p `and` q)@.
-    xor :: (Ord var, Show var) => repr var -> repr var -> repr var
+    xor :: (Co repr var) => repr var -> repr var -> repr var
     xor p q = (p `or` q) `and` not (p `and` q)
 
 -- | A class for circuits with order constraints
 class Circuit repr => NatCircuit repr where
     -- | Ordering constraints for binary represented (lsb first) naturals
-    nat   :: (Ord var, Show var) => var -> repr var
-    gt,lt,eq :: (Ord var, Show var) => repr var -> repr var -> repr var
+    nat   :: (Co repr var) => var -> repr var
+    gt,lt,eq :: (Co repr var) => repr var -> repr var -> repr var
     gt x y = not (lt x y) `and` not (eq x y)
 
 -- | A class for circuits with existential quantification
 class Circuit repr => ExistCircuit repr where
-    exists :: (repr var -> repr var) -> repr var
-    existsN :: Int -> ([repr var] -> repr var) -> repr var
+    exists :: Co repr var => (repr var -> repr var) -> repr var
+    existsN :: Co repr var => Int -> ([repr var] -> repr var) -> repr var
 
     exists k = existsN 1 (\[x] -> k x)
     existsN n k = (`runCont` id) $ do {xx <- replicateM n (cont exists); return $ k xx}
 
 -- | A class for circuits with universal quantification
 class ExistCircuit repr => ForallCircuit repr where
-    forall :: (repr var -> repr var) -> repr var
+    forall :: Co repr var => (repr var -> repr var) -> repr var
 
 -- ** Explicit sharing circuit
 
@@ -305,6 +307,7 @@ recordC cons prj upd x = do
         (return . cons) $ lookupv x (prj s)
 
 instance Circuit Shared where
+    type Co Shared var = Ord var
     false = Shared falseS
     true  = Shared trueS
     input v = Shared $ recordC CVar varMap (\s e -> s{ varMap = e }) v
@@ -457,6 +460,7 @@ instance Traversable Tree where
   traverse f (TNat v)    = TNat <$> f v
 
 instance Circuit Tree where
+    type Co Tree var = ()
     true  = TTrue
     false = TFalse
     input = TLeaf
@@ -548,6 +552,7 @@ runGraph graphBuilder =
     in Graph.mkGraph nodes edges
 
 instance Circuit Graph where
+    type Co Graph var = ()
     input v = Graph $ do
         n <- newNode
         return $ (n, [(n, NInput v)], [])
@@ -1089,7 +1094,7 @@ removeNats' bitwidth freshvars (FrozenShared code maps)
   lt _  [] = false
 
 -- | Returns an equivalent circuit with no iff, xor, onlyif, ite, nat, eq and lt nodes.
-removeComplex :: (Ord v, Show v, ExistCircuit c) => [v] -> FrozenShared v -> (c v, Map v [v])
+removeComplex :: (Ord v, Show v, ExistCircuit c, Co c v) => [v] -> FrozenShared v -> (c v, Map v [v])
 removeComplex freshVars (FrozenShared code maps) = assert disjoint $ (go code, bitnats)
   where
 

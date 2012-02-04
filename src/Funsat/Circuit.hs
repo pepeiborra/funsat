@@ -3,6 +3,8 @@
 {-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleContexts, FlexibleInstances, TypeSynonymInstances #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE ConstraintKinds #-}
 
 -- | A circuit is a standard one of among many ways of representing a
 -- propositional logic formula.  This module provides a flexible circuit type
@@ -17,7 +19,7 @@ module Funsat.Circuit
       Circuit(..)
     , CastCircuit(..)
 
-    -- ** Explicit sharing circuit
+    -- ** explicit sharing circuit
     , Shared(..)
     , FrozenShared(..)
     , runShared
@@ -95,7 +97,7 @@ import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Prelude as Prelude
 
-
+import GHC.Prim (Constraint)
 
 -- * Circuit representation
 
@@ -103,27 +105,28 @@ import qualified Prelude as Prelude
 -- | A class representing a grammar for logical circuits.  Default
 -- implemenations are indicated.
 class Circuit repr where
-    true  :: (Ord var, Show var) => repr var
-    false :: (Ord var, Show var) => repr var
-    input :: (Ord var, Show var) => var -> repr var
-    not   :: (Ord var, Show var) => repr var -> repr var
+    type Co repr var :: Constraint
+    true  :: Co repr var => repr var
+    false :: Co repr var => repr var
+    input :: Co repr var => var -> repr var
+    not   :: Co repr var => repr var -> repr var
 
     -- | Defined as @`and' p q = not (not p `or` not q)@.
-    and   :: (Ord var, Show var) => repr var -> repr var -> repr var
+    and   :: Co repr var => repr var -> repr var -> repr var
     and p q = not (not p `or` not q)
 
     -- | Defined as @`or' p q = not (not p `and` not q)@.
-    or    :: (Ord var, Show var) => repr var -> repr var -> repr var
+    or    :: Co repr var => repr var -> repr var -> repr var
     or p q = not (not p `and` not q)
 
-    orL, andL :: (Ord var, Show var) => [repr var] -> repr var
+    orL, andL :: Co repr var => [repr var] -> repr var
     orL  = foldr or false
     andL = foldr and true
 
 -- | Instances of `CastCircuit' admit converting one circuit representation to
 -- another.
 class Circuit cOut => CastCircuit c cOut where
-    castCircuit :: (Ord var, Show var) => c var -> cOut var
+    castCircuit :: (Co cOut var, Ord var) => c var -> cOut var
 
 -- ** Explicit sharing circuit
 
@@ -242,6 +245,7 @@ recordC cons prj upd x = do
         (return . cons) $ lookupv x (prj s)
 
 instance Circuit Shared where
+    type Co Shared var = Ord var
     false = Shared falseS
     true  = Shared trueS
     input v = Shared $ recordC CVar varMap (\s e -> s{ varMap = e }) v
@@ -352,6 +356,7 @@ instance Traversable Tree where
   traverse f (TOr  t1 t2) = TOr  <$> traverse f t1 <*> traverse f t2
 
 instance Circuit Tree where
+    type Co Tree var = ()
     true  = TTrue
     false = TFalse
     input = TLeaf
@@ -382,6 +387,7 @@ runEval :: BEnv v -> Eval v -> Bool
 runEval = (fromRight.) . flip unEval . Map.map Right
 
 instance Circuit Eval where
+    type Co Eval var = (Ord var, Show var)
     true    = Eval $ const $ Right True
     false   = Eval $ const $ Right False
     input v = Eval $ \env ->
@@ -421,6 +427,7 @@ runGraph graphBuilder =
     in Graph.mkGraph nodes edges
 
 instance Circuit Graph where
+    type Co Graph var = ()
     input v = Graph $ do
         n <- newNode
         return $ (n, [(n, NInput v)], [])
