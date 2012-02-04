@@ -74,7 +74,7 @@ where
 
 import Control.Applicative
 import Control.Monad.Reader
-import Control.Monad.State.Lazy hiding ((>=>), forM_)
+import Control.Monad.State.Strict hiding ((>=>), forM_)
 import Control.Monad.RWS
 import Data.Bimap( Bimap )
 import Data.Foldable (Foldable, foldMap)
