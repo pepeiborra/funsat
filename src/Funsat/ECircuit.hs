@@ -87,7 +87,6 @@ import Control.Applicative
 import Control.Arrow (first, second)
 import Control.Exception (assert)
 import Control.Monad.Cont
-import Control.Monad.Identity
 import Control.Monad.Reader
 import Control.Monad.RWS
 import Control.Monad.State.Strict hiding ((>=>), forM_)
@@ -105,7 +104,6 @@ import Funsat.Circuit (Circuit(..), CastCircuit(..), Co
                       ,EvalF(..), Eval
                       ,BEnv, BIEnv)
 import Prelude hiding( not, and, or )
-import Text.Show
 
 import qualified Data.Bimap as Bimap
 import qualified Data.Graph.Inductive.Graph as Graph
@@ -1024,7 +1022,7 @@ toCNF c@(FrozenShared !sharedCircuit !circuitMaps) = let
 --   Returns the new circuit, together with a mapping from variables representing naturals
 --   to a list of their bits lsb first.
 removeNats :: (Ord v, Show v) => [v] -> FrozenShared v -> (FrozenShared v, Map v [v])
-removeNats freshvars f@(FrozenShared code maps) = removeNats' bitwidth freshvars f
+removeNats freshvars f@(FrozenShared _code maps) = removeNats' bitwidth freshvars f
   where
   bitwidth = fst . head . dropWhile ( (< Bimap.size (natMap maps)) . snd) . zip [1..] . iterate (*2) $ 2
 
@@ -1059,7 +1057,7 @@ removeNats' bitwidth freshvars (FrozenShared code maps)
   go' c@CIff{}   = updateC (onTupM go)  c iffMap (\s e -> s{iffMap = e})
   go' c@COnlyif{}= updateC (onTupM go)  c onlyifMap (\s e -> s{onlyifMap = e})
   go' c@CIte{}   = updateC (onTripM go) c iteMap (\s e -> s{iteMap = e})
-  go' c@CNat{}   = error "removeNats: unexpected"
+  go'   CNat{}   = error "removeNats: unexpected"
   go' c@CEq{}    = f c eqMap eq
   go' c@CLt{}    = f c ltMap lt
 
@@ -1217,6 +1215,7 @@ reconstructNatsFromBits bitnats bienv = bienv'
                                        map (\v -> fromRight $ Map.findWithDefault (Right False) v bienv) bits
                           ]
   fromRight (Right x) = x
+  fromRight (Left _) = error "fromRight"
 
 data ProjectionCase = Var CircuitHash | Bit (CircuitHash, Int) | Auxiliar
 

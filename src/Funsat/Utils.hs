@@ -38,7 +38,6 @@ import System.IO( hPutStr, stderr )
 import qualified Data.Foldable as Fl
 import qualified Data.Graph.Inductive.Graph as Graph
 import qualified Data.Graph.Inductive.Query.DFS as DFS
-import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 

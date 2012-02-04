@@ -28,7 +28,6 @@ import Data.Sequence( Seq )
 import Funsat.Monad
 import Funsat.Types
 import Prelude hiding ( sum, concatMap, elem, foldr, foldl, any, maximum )
-import qualified Data.Sequence as Seq
 
 data FunsatState s = SC
     { cnf :: CNF                -- ^ The problem.
