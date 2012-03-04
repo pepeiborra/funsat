@@ -5,6 +5,7 @@
 {-# LANGUAGE FlexibleContexts, FlexibleInstances, TypeSynonymInstances #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 -- | A circuit is a standard one of among many ways of representing a
 -- propositional logic formula.  This module provides a flexible circuit type
@@ -126,7 +127,9 @@ class Circuit repr where
 -- | Instances of `CastCircuit' admit converting one circuit representation to
 -- another.
 class Circuit cOut => CastCircuit c cOut where
-    castCircuit :: (Co cOut var, Ord var) => c var -> cOut var
+    type CastCo c cOut var :: Constraint
+    type CastCo c cOut var = Co cOut var
+    castCircuit :: (CastCo c cOut var, Ord var) => c var -> cOut var
 
 -- ** Explicit sharing circuit
 

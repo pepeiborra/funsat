@@ -142,7 +142,7 @@ class Circuit repr => NatCircuit repr where
     -- | Ordering constraints for binary represented (lsb first) naturals
     nat   :: (Co repr var) => var -> repr var
     gt,lt,eq :: (Co repr var) => repr var -> repr var -> repr var
-    gt x y = not (lt x y) `and` not (eq x y)
+    gt x y = not (lt x y `or` eq x y)
 
 -- | A class for circuits with existential quantification
 class Circuit repr => ExistCircuit repr where
