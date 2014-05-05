@@ -1,5 +1,5 @@
-Name:                funsat-lang
-Version:             0.7
+Name:                narradar-funsat-lang
+Version:             0.8
 Cabal-Version:       >= 1.2
 Description:
     Fork of the circuit language and CNF representation in Funsat (Denis Bueno),
@@ -15,21 +15,6 @@ License-file:        LICENSE
 Author:              Denis Bueno, Jose Iborra
 Maintainer:          Jose Iborra <pepeiborra@gmail.com>
 Build-type:          Simple
-Extra-source-files:  README CHANGES
-
-
--- Executable funsat
---  Main-is:             Main.hs
---  buildable:           False
---  Ghc-options:         -funbox-strict-fields
---                       -Wall -fwarn-tabs
---                       -fno-warn-name-shadowing
---                       -fno-warn-orphans
---  Extensions:          CPP, ScopedTypeVariables
---  CPP-options:         -DTESTING
---  Hs-source-dirs:      . src tests
---  Build-Depends:       random,
---                       time
 
 Library
  Exposed-modules:     Funsat.Circuit
