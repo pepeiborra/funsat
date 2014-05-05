@@ -17,7 +17,8 @@ module Funsat.ECircuit
       Circuit(..)
     , ECircuit(..)
     , NatCircuit(..)
-    , ExistCircuit(..), ForallCircuit(..)
+    , ExistCircuit(..), existsN
+    , ForallCircuit(..)
     , CastCircuit(..)
 
     -- ** bit-encoded Naturals
@@ -146,11 +147,11 @@ class Circuit repr => NatCircuit repr where
 
 -- | A class for circuits with existential quantification
 class Circuit repr => ExistCircuit repr where
-    exists :: Co repr var => (repr var -> repr var) -> repr var
-    existsN :: Co repr var => Int -> ([repr var] -> repr var) -> repr var
+    existsBool :: Co repr var => (repr var -> repr var) -> repr var
+    existsNat  :: Co repr var => (repr var -> repr var) -> repr var
 
-    exists k = existsN 1 (\[x] -> k x)
-    existsN n k = (`runCont` id) $ do {xx <- replicateM n (cont exists); return $ k xx}
+existsN :: (ExistCircuit repr, Co repr var) => Int -> ([repr var] -> repr var) -> repr var
+existsN n k = (`runCont` id) $ do {xx <- replicateM n (cont existsBool); return $ k xx}
 
 -- | A class for circuits with universal quantification
 class ExistCircuit repr => ForallCircuit repr where
@@ -186,8 +187,9 @@ instance (ECircuit c, NatCircuit c) => CastCircuit FrozenShared c where
         go    CTrue{}    = true
         go    CFalse{}   = false
         go c@(CVar{})    = input $ getChildren c (varMap maps)
---        go    CExist{}   = exists id
-        go    CExist{}   = error "cannot cast circuits with existential constraints"
+--        go    CExist{}   = existsBool id
+        go    CExistBool{}   = error "cannot cast circuits with existential constraints"
+        go    CExistNat{}   = error "cannot cast circuits with existential constraints"
         go c@(CAnd{})    = uncurry and    . go2 $ getChildren c (andMap maps)
         go c@(COr{})     = uncurry or     . go2 $ getChildren c (orMap maps)
         go c@(CNot{})    = not            . go  $ getChildren c (notMap maps)
@@ -226,7 +228,8 @@ trueHash  = 1
 data CCode = CTrue   { circuitHash :: !CircuitHash }
            | CFalse  { circuitHash :: !CircuitHash }
            | CVar    { circuitHash :: !CircuitHash }
-           | CExist  { circuitHash :: !CircuitHash }
+           | CExistBool  { circuitHash :: !CircuitHash }
+           | CExistNat  { circuitHash :: !CircuitHash }
            | CAnd    { circuitHash :: !CircuitHash }
            | COr     { circuitHash :: !CircuitHash }
            | CNot    { circuitHash :: !CircuitHash }
@@ -343,10 +346,14 @@ instance ECircuit Shared where
         ite_ hx ht he = recordC CIte iteMap (\s e' -> s{ iteMap = e' }) (hx, ht, he)
 
 instance ExistCircuit Shared where
-    exists k  = Shared $ do
+    existsBool k  = Shared $ do
         c:cs <- gets hashCount
         modify $ \s -> s{existSet = Set.insert c (existSet s),hashCount=cs}
-        unShared . k . Shared . return . CExist $ c
+        unShared . k . Shared . return . CExistBool $ c
+    existsNat k  = Shared $ do
+        c:cs <- gets hashCount
+        modify $ \s -> s{existSet = Set.insert c (existSet s),hashCount=cs}
+        unShared . k . Shared . return . CExistNat $ c
 
 instance NatCircuit Shared where
     eq sx sy = Shared $ do
@@ -615,7 +622,8 @@ shareGraph (FrozenShared output cmaps) =
     -- Invariant: The returned node is always a member of the returned list of
     -- nodes.  Returns: (node, node-list, edge-list).
     go c@(CVar i) = return (i, [(i, frz c)], [])
-    go c@(CExist i) = return (i, [(i, frz c)], [])
+    go c@(CExistBool i) = return (i, [(i, frz c)], [])
+    go c@(CExistNat  i) = return (i, [(i, frz c)], [])
     go c@(CTrue i)  = return (i, [(i, frz c)], [])
     go c@(CFalse i) = return (i, [(i, frz c)], [])
     go c@(CNot i) = do
@@ -664,7 +672,8 @@ shareGraph' (FrozenShared output cmaps) =
     -- Invariant: The returned node is always a member of the returned list of
     -- nodes.  Returns: (node, node-list, edge-list).
     go c@(CVar i) = return (i, [(i, frz c)], [])
-    go c@(CExist i) = return (i, [(i, frz c)], [])
+    go c@(CExistBool i) = return (i, [(i, frz c)], [])
+    go c@(CExistNat  i) = return (i, [(i, frz c)], [])
     go c@(CTrue i)  = return (i, [(i, frz c)], [])
     go c@(CFalse i) = return (i, [(i, frz c)], [])
     go c@(CNot i) = do
@@ -696,7 +705,8 @@ shareGraph' (FrozenShared output cmaps) =
     tupM2 f (x, y) = liftM2 (,) (f x) (f y)
 
     frz (CVar i) = "v" ++ show i
-    frz (CExist i) = "?" ++ show i
+    frz (CExistBool i) = "?" ++ show i ++ "(bool)"
+    frz (CExistNat  i) = "?" ++ show i ++ "(nat)"
     frz CFalse{} = "false"
     frz CTrue{}  = "true"
     frz CNot{}   = "not"
@@ -870,7 +880,8 @@ toCNF c@(FrozenShared !sharedCircuit !circuitMaps) = let
     -- False, and Var circuits.  We therefore remove the complex circuit before
     -- passing stuff to this function.
     go c@(CVar{})   = findVar' c goOn goOn
-    go c@CExist{}   = findVar' c goOn goOn
+    go c@CExistBool{} = findVar' c goOn goOn
+    go c@CExistNat{}  = findVar' c goOn goOn
     go   (CTrue{})  = true
     go   (CFalse{}) = false
 --     -- x <-> -y
@@ -1049,7 +1060,8 @@ removeNats' bitwidth freshvars (FrozenShared code maps)
   go' c@CTrue{}  = return c
   go' c@CFalse{} = return c
   go' c@CVar{}   = return c
-  go' c@CExist{} = return c
+  go' c@CExistBool{} = return c
+  go' c@CExistNat{}  = return c
   go' c@CNot{}   = updateC go c notMap (\s e -> s{notMap = e})
   go' c@COr{}    = updateC (onTupM go)  c orMap (\s e -> s{orMap = e})
   go' c@CXor{}   = updateC (onTupM go)  c xorMap (\s e -> s{xorMap = e})
@@ -1105,7 +1117,8 @@ removeComplex freshVars (FrozenShared code maps) = assert disjoint $ (go code, b
   go (CTrue{})  = true
   go (CFalse{}) = false
   go c@(CVar{}) = input $ getChildren c (varMap maps)
-  go   CExist{} = exists id
+  go   CExistBool{} = existsBool id
+  go   CExistNat{}  = existsNat  id
   go c@(COr{})  = uncurry or (go `onTup` getChildren c (orMap maps))
   go c@(CAnd{}) = uncurry and (go `onTup` getChildren c (andMap maps))
   go c@(CNot{}) = not . go $ getChildren c (notMap maps)
