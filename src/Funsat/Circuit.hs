@@ -18,6 +18,7 @@ module Funsat.Circuit
     (
     -- ** Circuit type class
       Circuit(..)
+    , Co
     , CastCircuit(..)
 
     -- ** explicit sharing circuit
@@ -105,8 +106,8 @@ import GHC.Prim (Constraint)
 
 -- | A class representing a grammar for logical circuits.  Default
 -- implemenations are indicated.
+type family Co (repr :: * -> *) var :: Constraint
 class Circuit repr where
-    type Co repr var :: Constraint
     true  :: Co repr var => repr var
     false :: Co repr var => repr var
     input :: Co repr var => var -> repr var
@@ -247,8 +248,8 @@ recordC cons prj upd x = do
             return (cons c))
         (return . cons) $ lookupv x (prj s)
 
+type instance Co Shared var = Ord var
 instance Circuit Shared where
-    type Co Shared var = Ord var
     false = Shared falseS
     true  = Shared trueS
     input v = Shared $ recordC CVar varMap (\s e -> s{ varMap = e }) v
@@ -358,8 +359,8 @@ instance Traversable Tree where
   traverse f (TAnd t1 t2) = TAnd <$> traverse f t1 <*> traverse f t2
   traverse f (TOr  t1 t2) = TOr  <$> traverse f t1 <*> traverse f t2
 
+type instance Co Tree var = ()
 instance Circuit Tree where
-    type Co Tree var = ()
     true  = TTrue
     false = TFalse
     input = TLeaf
@@ -383,14 +384,16 @@ type BIEnv v = Map v (Either Int Bool)
 -- | A circuit evaluator, that is, a circuit represented as a function from
 -- variable values to booleans.
 type Eval = EvalF (Either Int Bool)
-newtype EvalF a v = Eval { unEval :: BIEnv v -> a }
+newtype EvalF a v = Eval { unEval :: BIEnv v -> a } deriving Generic
+
+instance NFData (EvalF a v)
 
 -- | Evaluate a circuit given inputs.
 runEval :: BEnv v -> Eval v -> Bool
 runEval = (fromRight.) . flip unEval . Map.map Right
 
+type instance Co Eval var = (Ord var, Show var)
 instance Circuit Eval where
-    type Co Eval var = (Ord var, Show var)
     true    = Eval $ const $ Right True
     false   = Eval $ const $ Right False
     input v = Eval $ \env ->
@@ -401,6 +404,10 @@ instance Circuit Eval where
     and c1 c2 = Eval (\env -> Right $ fromRight(unEval c1 env) && fromRight(unEval c2 env))
     or  c1 c2 = Eval (\env -> Right $ fromRight(unEval c1 env) || fromRight(unEval c2 env))
     not c     = Eval (\env -> Right $ Prelude.not $ fromRight(unEval c env))
+
+instance CastCircuit Eval Eval where
+  type CastCo Eval Eval v = ()
+  castCircuit = id
 
 
 fromRight :: Either Int Bool -> Bool
@@ -429,8 +436,8 @@ runGraph graphBuilder =
     let (_, nodes, edges) = evalState (unGraph graphBuilder) 1
     in Graph.mkGraph nodes edges
 
+type instance Co Graph var = ()
 instance Circuit Graph where
-    type Co Graph var = ()
     input v = Graph $ do
         n <- newNode
         return $ (n, [(n, NInput v)], [])
@@ -450,6 +457,10 @@ instance Circuit Graph where
 
     and = binaryNode NAnd
     or  = binaryNode NOr
+
+instance CastCircuit Graph Graph where
+  type CastCo Graph Graph v = ()
+  castCircuit = id
 
 binaryNode :: NodeType v -> Graph v -> Graph v -> Graph v
 {-# INLINE binaryNode #-}
