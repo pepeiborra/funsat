@@ -1,5 +1,5 @@
 Name:                narradar-funsat-lang
-Version:             0.8
+Version:             0.9
 Cabal-Version:       >= 1.2
 Description:
     Fork of the circuit language and CNF representation in Funsat (Denis Bueno),
@@ -27,6 +27,8 @@ Library
                       -Wall -fwarn-tabs
                       -fno-warn-name-shadowing
                       -fno-warn-orphans
+                      -fno-warn-unused-imports
+                      -fno-warn-dodgy-imports
  Extensions:          CPP, ScopedTypeVariables, PatternGuards
  Hs-source-dirs:      src
  Build-Depends:       base,
@@ -38,4 +40,5 @@ Library
                       bimap >= 0.2 && < 0.3,
                       fgl,
                       split,
-                      ghc-prim
+                      deepseq,
+                      ghc-prim, prelude-extras

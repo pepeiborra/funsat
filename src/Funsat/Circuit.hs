@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE PatternGuards #-}
@@ -76,19 +77,20 @@ where
     Copyright 2008 Denis Bueno
 -}
 
-import Control.Applicative
-import Control.Monad.Reader
-import Control.Monad.State.Strict hiding ((>=>), forM_)
-import Control.Monad.RWS
-import Data.Bimap( Bimap )
-import Data.Foldable (Foldable, foldMap)
-import Data.List( nub )
-import Data.Map( Map )
-import Data.Maybe()
-import Data.Ord()
-import Data.Set( Set )
-import Data.Traversable (Traversable, traverse, fmapDefault, foldMapDefault)
-import Funsat.Types( CNF(..), Lit(..), Var(..), var, lit, Solution(..), litSign, litAssignment )
+import           Control.Applicative
+import           Control.DeepSeq
+import           Control.Monad.RWS
+import           Control.Monad.Reader
+import           Control.Monad.State.Strict hiding ((>=>), forM_)
+import           Data.Bimap ( Bimap )
+import           Data.Foldable (Foldable, foldMap)
+import           Data.List ( nub )
+import           Data.Map ( Map )
+import           Data.Maybe ()
+import           Data.Ord ()
+import           Data.Set ( Set )
+import           Data.Traversable (Traversable, traverse, fmapDefault, foldMapDefault)
+import           Funsat.Types ( CNF(..), Lit(..), Var(..), var, lit, Solution(..), litSign, litAssignment )
 import Prelude hiding( not, and, or )
 
 import qualified Data.Bimap as Bimap
@@ -99,7 +101,8 @@ import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Prelude as Prelude
 
-import GHC.Prim (Constraint)
+import           GHC.Prim (Constraint)
+import           GHC.Generics
 
 -- * Circuit representation
 
