@@ -108,8 +108,8 @@ class Circuit repr => NatCircuit repr where
     a -# b   = a +# negate b
 
 class NatCircuit repr => MaxCircuit repr where
-  maxL :: [repr var] -> repr var
-  max  :: repr var -> repr var -> repr var
+  maxL :: Co repr var => [repr var] -> repr var
+  max  :: Co repr var => repr var -> repr var -> repr var
 
   maxL = foldr1 max
   max a b = maxL [a,b]
